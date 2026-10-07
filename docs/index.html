@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Call of Yuki Studio</title>
+<style>
+:root{--bg:#14161c;--card:#1d2029;--ink:#eef0f4;--mute:#9aa1b0;--line:#2c3040;--acc:#e04a57;--grn:#5a9060;--ok:#6fcf8a;--bad:#ff7b7b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:26px;margin:8px 0 2px}h1 span{color:var(--acc)}
+p.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
+textarea,select,input[type=text],input[type=password]{width:100%;background:#12141a;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+textarea{min-height:300px;resize:vertical;font-size:15px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:12px 18px;font:600 16px inherit;cursor:pointer;width:100%;margin-top:16px}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--mute);width:auto;padding:8px 12px;font-size:14px;margin-top:8px}
+button:disabled{opacity:.5;cursor:default}
+.chk{display:flex;gap:8px;align-items:center;margin-top:14px;color:var(--ink);font-size:15px}
+.chk input{width:18px;height:18px}
+#log{white-space:pre-wrap;font:14px/1.6 ui-monospace,Menlo,monospace;color:var(--mute)}
+.step{display:flex;gap:8px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+a{color:#ffb3ba}
+.hint{font-size:13px;color:var(--mute)}
+details summary{cursor:pointer;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Call of <span>Yuki</span> Studio</h1>
+<p class="sub">Paste a script. Yuki narrates it, and the finished video can go straight to your channel.</p>
+
+<div class="card" id="setup" hidden>
+  <b>One-time setup</b>
+  <p class="hint">Paste your GitHub token (fine-grained, only for the <code>yuki-video</code> repo, with Contents and Actions set to read &amp; write). It stays in this browser only.</p>
+  <input type="password" id="tok" placeholder="github_pat_...">
+  <button id="saveTok">Save token</button>
+</div>
+
+<div class="card" id="form">
+  <label for="script">Script (the first line can be <code>#&nbsp;Your Title</code>)</label>
+  <textarea id="script" placeholder="# Why you keep procrastinating&#10;&#10;Have you ever sat down to do something important, and then suddenly found yourself cleaning your desk?"></textarea>
+  <div class="row">
+    <div><label for="voice">Voice</label>
+      <select id="voice"><option value="clone">My cloned voice (slow, needs voice sample)</option><option value="edge">Quick voice (ready in minutes)</option></select></div>
+    <div><label for="privacy">YouTube visibility</label>
+      <select id="privacy"><option value="private">Private (check it first)</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>
+  </div>
+  <label class="chk"><input type="checkbox" id="upload" checked> Upload to my Call of Yuki channel when it's done</label>
+  <button id="go">Make the video</button>
+  <button class="ghost" id="changeTok">Change token</button>
+</div>
+
+<div class="card" id="status" hidden>
+  <div id="log"></div>
+  <div id="result"></div>
+</div>
+
+<details class="card"><summary>Tips</summary>
+<p class="hint">Cloned voice takes a few hours for a long script because it runs on free servers. Use the quick voice to check the video first. Leave the page open or come back later: runs continue without you, and the YouTube link is saved in the <code>results</code> folder of the repo.</p>
+</details>
+</main>
+<script>
+const OWNER="sabaghanbarlo-hash",REPO="yuki-video",WF="generate.yml",API="https://api.github.com";
+const $=id=>document.getElementById(id);
+const tok=()=>{try{return localStorage.getItem("yuki_tok")||""}catch(e){return window._t||""}};
+const setTok=v=>{try{localStorage.setItem("yuki_tok",v)}catch(e){window._t=v}};
+function gh(path,opt={}){return fetch(API+path,{...opt,headers:{Accept:"application/vnd.github+json",Authorization:"Bearer "+tok(),"X-GitHub-Api-Version":"2022-11-28",...(opt.headers||{})}})}
+function show(){const has=!!tok();$("setup").hidden=has;$("form").hidden=!has}
+$("saveTok").onclick=()=>{const v=$("tok").value.trim();if(v){setTok(v);show()}};
+$("changeTok").onclick=()=>{setTok("");$("tok").value="";show()};
+show();
+const b64=s=>btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+const slug=t=>(t.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)||"video");
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function log(t,cls){const d=document.createElement("div");d.className="step "+(cls||"");d.textContent=t;$("log").appendChild(d)}
+async function main(){
+  const text=$("script").value.trim();
+  if(text.split(/\s+/).length<20){alert("The script looks too short.");return}
+  $("go").disabled=true;$("status").hidden=false;$("log").innerHTML="";$("result").innerHTML="";
+  const m=text.match(/^#\s+(.+)$/m);
+  const stamp=new Date().toISOString().slice(5,16).replace(/[-:T]/g,"");
+  const name=slug(m?m[1]:"video")+"-"+stamp;
+  const path="stories/"+name+".txt";
+  try{
+    log("Saving your script...");
+    let r=await gh(`/repos/${OWNER}/${REPO}/contents/${path}`,{method:"PUT",body:JSON.stringify({message:"Add script "+name,content:b64(text+"\n")})});
+    if(!r.ok)throw new Error("Could not save the script ("+r.status+"). Check the token.");
+    const t0=Date.now()-5000;
+    const upload=$("upload").checked;
+    log("Starting the video...");
+    r=await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/dispatches`,{method:"POST",body:JSON.stringify({ref:"main",inputs:{script:path,voice:$("voice").value,upload:String(upload),privacy:$("privacy").value}})});
+    if(r.status!==204)throw new Error("Could not start it ("+r.status+"). The token needs Actions: read & write.");
+    let run=null;
+    for(let i=0;i<30&&!run;i++){await sleep(4000);
+      const j=await (await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/runs?event=workflow_dispatch&per_page=5`)).json();
+      run=(j.workflow_runs||[]).find(x=>new Date(x.created_at).getTime()>=t0)||null}
+    if(!run)throw new Error("The run did not appear. Look at the Actions tab of the repo.");
+    const runUrl=run.html_url;let shown="";
+    while(true){
+      const j=await (await gh(`/repos/${OWNER}/${REPO}/actions/runs/${run.id}`)).json();
+      const jobs=await (await gh(`/repos/${OWNER}/${REPO}/actions/runs/${run.id}/jobs`)).json();
+      const cur=((jobs.jobs||[])[0]?.steps||[]).find(s=>s.status==="in_progress");
+      const msg=cur?("Working: "+cur.name):"Waiting for a server...";
+      if(msg!==shown){shown=msg;log(msg)}
+      if(j.status==="completed"){
+        if(j.conclusion==="success"){
+          log("Finished.","ok");
+          let html=`<p><a href="${runUrl}" target="_blank">Open the run to download the video (Artifacts → video)</a></p>`;
+          if(upload){
+            const rr=await gh(`/repos/${OWNER}/${REPO}/contents/results/${name}.json?ref=main`);
+            if(rr.ok){const d=JSON.parse(atob((await rr.json()).content));html=`<p class="ok"><b>On YouTube:</b> <a href="${d.url}" target="_blank">${d.url}</a> (${d.privacy})</p>`+html}
+            else html=`<p class="bad">Rendered, but the YouTube link is not saved yet. Refresh the run in a minute.</p>`+html}
+          $("result").innerHTML=html}
+        else{log("It stopped with: "+j.conclusion,"bad");$("result").innerHTML=`<p><a href="${runUrl}" target="_blank">See what went wrong</a></p>`}
+        break}
+      await sleep(15000)}
+  }catch(e){log(e.message,"bad")}
+  $("go").disabled=false}
+$("go").onclick=main;
+</script>
+</body>
+</html>
