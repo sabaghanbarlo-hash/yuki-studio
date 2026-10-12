@@ -17,6 +17,10 @@ textarea,select,input[type=text],input[type=password]{width:100%;background:#121
 textarea{min-height:300px;resize:vertical;font-size:15px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:560px){.row{grid-template-columns:1fr}}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+.mode{border:2px solid var(--line);border-radius:12px;padding:12px;cursor:pointer;background:#12141a}
+.mode b{display:block}.mode span{font-size:13px;color:var(--mute)}
+.mode.on{border-color:var(--acc);background:#2a1d22}
 button{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:12px 18px;font:600 16px inherit;cursor:pointer;width:100%;margin-top:16px}
 button.ghost{background:transparent;border:1px solid var(--line);color:var(--mute);width:auto;padding:8px 12px;font-size:14px;margin-top:8px}
 button:disabled{opacity:.5;cursor:default}
@@ -27,6 +31,7 @@ button:disabled{opacity:.5;cursor:default}
 a{color:#ffb3ba}
 .hint{font-size:13px;color:var(--mute)}
 details summary{cursor:pointer;color:var(--mute)}
+code{background:#12141a;padding:1px 5px;border-radius:5px}
 </style>
 </head>
 <body>
@@ -42,11 +47,17 @@ details summary{cursor:pointer;color:var(--mute)}
 </div>
 
 <div class="card" id="form">
-  <label for="script">Script (the first line can be <code>#&nbsp;Your Title</code>)</label>
-  <textarea id="script" placeholder="# Why you keep procrastinating&#10;&#10;Have you ever sat down to do something important, and then suddenly found yourself cleaning your desk?"></textarea>
+  <label>What kind of video?</label>
+  <div class="modes">
+    <div class="mode on" id="m_explainer" data-mode="explainer"><b>Self-improvement</b><span>Yuki explains an idea, with text, icons and pictures on screen.</span></div>
+    <div class="mode" id="m_story" data-mode="story"><b>Storytelling</b><span>Yuki tells a story with a cast, speech bubbles, funny moments and sound effects.</span></div>
+  </div>
+  <label for="script" id="scriptLabel">Script (the first line can be <code>#&nbsp;Your Title</code>)</label>
+  <textarea id="script"></textarea>
+  <p class="hint" id="modeHint"></p>
   <div class="row">
     <div><label for="voice">Voice</label>
-      <select id="voice"><option value="clone">My cloned voice (slow, needs voice sample)</option><option value="edge">Quick voice (ready in minutes)</option></select></div>
+      <select id="voice"><option value="edge">Built-in voice matched to mine (fast)</option><option value="clone">My cloned voice (slow, experimental)</option></select></div>
     <div><label for="privacy">YouTube visibility</label>
       <select id="privacy"><option value="private">Private (check it first)</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>
   </div>
@@ -61,12 +72,24 @@ details summary{cursor:pointer;color:var(--mute)}
 </div>
 
 <details class="card"><summary>Tips</summary>
-<p class="hint">Cloned voice takes a few hours for a long script because it runs on free servers. Use the quick voice to check the video first. Leave the page open or come back later: runs continue without you, and the YouTube link is saved in the <code>results</code> folder of the repo.</p>
+<p class="hint"><b>Story scripts:</b> plain paragraphs are Yuki narrating. <code>Mia: I overslept!</code> makes a character speak in a bubble; add a mood like <code>Tom (shocked): You did WHAT?</code>. Sound effects are added automatically from the words (knocked, laughed, thunder...) and you can force one with <code>[sfx: door_slam]</code>. Start a new scene with <code>## Monday morning</code>.</p>
+<p class="hint">Leave the page open or come back later: runs continue without you, and the YouTube link is saved in the <code>results</code> folder of the repo.</p>
 </details>
 </main>
 <script>
 const OWNER="sabaghanbarlo-hash",REPO="yuki-video",WF="generate.yml",API="https://api.github.com";
 const $=id=>document.getElementById(id);
+const SAMPLES={
+explainer:"# Why you keep procrastinating\n\nHave you ever sat down to do something important, and suddenly found yourself cleaning your desk?\n\nIt is not laziness. Your brain is trying to avoid a feeling, not the task itself.\n\nHere is the trick: make the first step so small that it feels silly.",
+story:"# The Day I Locked Myself Out\n\n[cast: Mia = girl | Tom = boy]\n\n## Monday morning\n\nSo this is the story of the worst Monday of my life. I woke up late, grabbed my keys, and ran out the door.\n[sfx: door_slam] Mia: Okay, bye apartment! I am so late for work!\nThen I heard it. The lock clicked behind me, and my keys were still inside.\n\nMia (shocked): No. No no no. You are kidding me!\nTom (happy): Haha, did you lock yourself out again?"};
+const HINTS={explainer:"Write it like a talk: short paragraphs, one idea each. Yuki explains while icons, text and pictures appear.",
+story:"Narration is Yuki. Use  Name: line  for a character speaking. Sound effects are added automatically."};
+let mode="explainer";
+function setMode(m){mode=m;for(const k of ["explainer","story"])$("m_"+k).classList.toggle("on",k===m);
+  $("script").placeholder=SAMPLES[m];$("modeHint").textContent=HINTS[m];try{localStorage.setItem("yuki_mode",m)}catch(e){}}
+document.querySelectorAll(".mode").forEach(el=>el.onclick=()=>setMode(el.dataset.mode));
+let saved="explainer";try{saved=localStorage.getItem("yuki_mode")||"explainer"}catch(e){}
+setMode(saved);
 const tok=()=>{try{return localStorage.getItem("yuki_tok")||""}catch(e){return window._t||""}};
 const setTok=v=>{try{localStorage.setItem("yuki_tok",v)}catch(e){window._t=v}};
 function gh(path,opt={}){return fetch(API+path,{...opt,headers:{Accept:"application/vnd.github+json",Authorization:"Bearer "+tok(),"X-GitHub-Api-Version":"2022-11-28",...(opt.headers||{})}})}
@@ -92,8 +115,8 @@ async function main(){
     if(!r.ok)throw new Error("Could not save the script ("+r.status+"). Check the token.");
     const t0=Date.now()-5000;
     const upload=$("upload").checked;
-    log("Starting the video...");
-    r=await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/dispatches`,{method:"POST",body:JSON.stringify({ref:"main",inputs:{script:path,voice:$("voice").value,upload:String(upload),privacy:$("privacy").value}})});
+    log("Starting the "+(mode==="story"?"story":"explainer")+" video...");
+    r=await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/dispatches`,{method:"POST",body:JSON.stringify({ref:"main",inputs:{script:path,mode:mode,voice:$("voice").value,upload:String(upload),privacy:$("privacy").value}})});
     if(r.status!==204)throw new Error("Could not start it ("+r.status+"). The token needs Actions: read & write.");
     let run=null;
     for(let i=0;i<30&&!run;i++){await sleep(4000);
