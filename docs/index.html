@@ -58,6 +58,8 @@ code{background:#12141a;padding:1px 5px;border-radius:5px}
   <div class="row">
     <div><label for="voice">Voice</label>
       <select id="voice"><option value="kokoro">Built-in voice matched to mine (free, fast)</option><option value="edge">Microsoft voice (free, may be blocked)</option><option value="clone">My cloned voice (slow, experimental)</option></select></div>
+    <div><label for="energy">Voice delivery</label>
+      <select id="energy"><option value="0.7">Calm</option><option value="1.2" selected>Lively (storyteller)</option><option value="1.7">Over the top (very dramatic)</option></select></div>
     <div><label for="privacy">YouTube visibility</label>
       <select id="privacy"><option value="private">Private (check it first)</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></div>
   </div>
@@ -116,7 +118,7 @@ async function main(){
     const t0=Date.now()-5000;
     const upload=$("upload").checked;
     log("Starting the "+(mode==="story"?"story":"explainer")+" video...");
-    r=await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/dispatches`,{method:"POST",body:JSON.stringify({ref:"main",inputs:{script:path,mode:mode,voice:$("voice").value,upload:String(upload),privacy:$("privacy").value}})});
+    r=await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WF}/dispatches`,{method:"POST",body:JSON.stringify({ref:"main",inputs:{script:path,mode:mode,voice:$("voice").value,energy:$("energy").value,upload:String(upload),privacy:$("privacy").value}})});
     if(r.status!==204)throw new Error("Could not start it ("+r.status+"). The token needs Actions: read & write.");
     let run=null;
     for(let i=0;i<30&&!run;i++){await sleep(4000);
